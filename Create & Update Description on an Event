@@ -1,0 +1,128 @@
+Trigger on Ticket:
+trigger EventTrigger on Ticket__c (after insert) {
+    if(trigger.isafter){
+        if(trigger.isinsert){
+            createEvent.my_Event(trigger.new);
+        }
+    }
+}
+
+Handler for the same:
+public class createEvent {
+    public static void my_Event(List<Ticket__c> tList){
+        set<Id> ConcertIDs = new set<Id>();
+        set<Id> ContactIDs = new set<Id>();
+        Map<Id,Concert__c> ConcertsId = new Map<Id,Concert__c>();
+        Map<ID,Contact> ContactsId = new Map<Id,Contact>();
+        
+        for(Ticket__c Tc : tList){
+            ConcertIDs.add(Tc.Concert__c);
+            ContactIDs.add(Tc.Customer__c);
+        }
+        for(Concert__c concert:[select id, Name,Venue__c,Date__c from Concert__c where id IN: ConcertIDs])
+        {
+            ConcertsId.put(concert.Id,concert);
+        }
+        for(Contact contact:[select Id, Name from Contact where ID IN : ContactIDs]){
+            ContactsId.put(contact.Id,contact);
+        }
+        List<Event> eventList = new List<Event>();
+        for(Ticket__c Tc : tList){
+            Concert__c concert = ConcertsId.get(Tc.Concert__c);
+            Contact contact = ContactsId.get(Tc.Customer__c);
+            if(concert!=null && contact!=null){
+                Event event = new Event();
+                event.Subject = 'Music Event';
+                event.Description = 'Hii ' +contact.Name+ '\nGretting!\n' +concert.Name+ '\nat\n' +concert.Venue__c+ '\non\n' +concert.Date__c+ '\nplease visit Happy Event\n';
+                event.Location = concert.Venue__c;
+                event.StartDateTime = system.now();
+                event.EndDateTime = event.StartDateTime.addHours(2);
+                event.WhatId = concert.Id;
+                event.WhoId = contact.Id;
+                eventList.add(event);
+            }
+        }
+        insert eventList;
+    }
+}
+
+
+
+Trigger on Update contact:
+trigger updateTrigger on Contact (after update) {
+    if(trigger.isUpdate){
+        updateContact.updateDescription(trigger.new);
+    }
+}
+
+Handler for the same:
+public class updateContact {
+    public static void updateDescription(List<Contact> cList){
+        set<Id> contactIds = new set<Id>();
+        
+        for(Contact con : cList){
+            contactIds.add(con.id);
+            system.debug('contact@@@@@:   '+con);
+            
+        }
+        
+        List<Event> eventlist = [SELECT Id, WhoId, Who.Name, Subject, Location, StartDateTime, Description FROM Event WHERE WhoId IN : contactIds];
+        List<Event> evList = new List<Event>();
+        //iterate over eventList to update the description field
+        for(Event event : eventlist) {
+            system.debug('This is my event');
+            system.debug('Event ==> '+event);
+            String contact = event.Who.Name;
+          	 system.debug('Contact == ' +contact);
+            event.Description = 'Hi ' + contact + '\nGreeting! \nYou are invited to ' + event.Subject +' at '+event.Location+ ' on ' + event.StartDateTime + '\nPlease visit! \nHappy Event!';
+            evList.add(event);
+        }
+        // To check if eventList is not null if not then update
+        if(evList != null){
+            update evList;
+        }
+    }
+}
+
+
+
+Trigger on Update Concert:
+trigger updateConcertTrigger on Concert__c (after update) {
+    if(trigger.isUpdate){
+        updateConcert.updateDescription(Trigger.new, Trigger.newmap);
+    }
+}
+
+Handler for the same:
+public class updateConcert {
+    public static void updateDescription(List<Concert__c> cList, Map<id,Concert__c> updateConcertMap){
+        set<Id> concertIds = new set<Id>();
+        
+        for(Concert__c con : cList){
+            concertIds.add(con.id);
+            system.debug('contact@@@@@:   '+con);
+            
+        }
+        list<event> eventUpdate=[SELECT Id, WhatId, Description, Subject, ActivityDate, StartDateTime, What.Id, What.Name, Owner.Id, Owner.LastName, Owner.Email, Who.Id, Who.Name FROM Event WHERE WhatId = :concertIds];
+        
+        system.debug('eventUpdate'+eventUpdate);
+        List<Event> eventList = new List<Event>();
+        //iterate over eventList to update the description field
+        if(eventUpdate != null){
+        for(Event ec : eventUpdate) {
+            system.debug('This is my Event');
+            system.debug('Event ==> '+ec);
+            ec.Subject = updateConcertMap.get(ec.WhatId).Name;
+            ec.Location = updateConcertMap.get(ec.WhatId).Venue__c;
+            ec.StartDateTime = updateConcertMap.get(ec.WhatId).Date__c;
+            ec.EndDateTime = updateConcertMap.get(ec.WhatId).Date__c+2;
+            ec.Description = 'Hi ' + ec.who.Name + '\nGreeting!\n' +'You are invited to '+ec.Subject+ '\n at ' + ec.Location +'\non'+ec.StartDateTime+ '\nPlease visit! \nHappy Event!';
+            eventList.add(ec);
+        }
+        }
+        // To check if eventList is not null if not then update
+        if(eventList != null){
+            database.update (eventList);
+        }
+    }
+}
