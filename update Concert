@@ -1,0 +1,76 @@
+Handler:
+public class updateConcerts {
+    public static void updateDesc(Map<ID, Concert__c> updateConcert){
+        Map<Id,List<String>> customerToMap = new Map<Id, List<String>>();
+        Map<Id, Concert__c> concertToMap = new map<Id, Concert__c>();
+        Map<Id, Event> eventToMap = new Map<Id, Event>();
+        
+        for(Ticket__c tc : [Select Id, Concert__c,Customer__c, Concert__r.Name,Concert__r.Venue__c,Concert__r.Date__c
+                            From Ticket__c Where Concert__c IN: updateConcert.keySet()]){
+                                concertToMap.put(tc.Id, updateConcert.get(tc.Concert__c));
+                                
+            if(customerToMap.containsKey(tc.Customer__c)){
+                   customerToMap.get(tc.Customer__c).add(tc.Id);
+           }
+            else{
+                List<String> ticketId = new List<String>{tc.Id};
+                    customerToMap.put(tc.Customer__c,ticketId);           
+      	 }                       
+   	  }
+        System.debug('customerToMap@@@@@@@@@@@' + customerToMap);
+        System.debug('concertToMap@@@@@@@@' + concertToMap);
+        
+                // GET EVENTS RELATED TO CUSTOMERS WITH CONCERT TICKETS
+        List<Event> eventsToUpdate = [SELECT Id, WhoId, Who.Name, Description, Subject, Location, StartDateTime FROM Event WHERE WhoId IN :customerToMap.keySet()];
+        system.debug('EventsToUpdate@@@@@@@@@@@@@@'+eventsToUpdate);
+        // UPDATE EVENT DESCRIPTION WITH CONCERT DETAILS
+        for(Event ev : eventsToUpdate){            
+            Id customerId = ev.WhoId;            
+            for(String tktId : customerToMap.get(customerId)){               
+                Concert__c concert = concertToMap.get(tktId);                
+                if(concert != null){
+                    ev.Description = 'Hi, ' + ev.Who.Name + '\n\nGreetings!\n\n' + concert.Name + ' at ' + concert.Venue__c + ' on ' + concert.Date__c.format() + '\n\nPlease visit!';
+                    eventToMap.put(ev.Id, ev);
+                }
+            }
+        }         
+        // UPDATE EVENTS
+        List<Event> eventsToUpdateList = new List<Event>(eventToMap.values());
+        update eventsToUpdateList;
+    }
+}
+
+Utility Test class:
+public class ConcertTestClass {
+    public static void testUpdateDesc() {
+        // Create test data
+        Concert__c concert = new Concert__c(Name='Test Concert', Venue__c='Test Venue', Date__c=Date.today());
+        insert concert;
+        
+        Customer customer = new Customer(Name='Test Customer');
+        insert customer;
+        
+        Ticket__c ticket = new Ticket__c(Concert__c=concert.Id, Customer__c=customer.Id);
+        insert ticket;
+        
+        Event event = new Event(StartDateTime=DateTime.now(), EndDateTime=DateTime.now().addHours(1), WhoId=customer.Id, Subject='Test Event', Description='Test Description', Location='Test Location');
+        insert event;
+        
+        // Call the method
+        Map<ID, Concert__c> updateConcert = new Map<ID, Concert__c>();
+        updateConcert.put(concert.Id, concert);
+        updateConcerts.updateDesc(updateConcert);
+        
+        // Verify that the event description was updated
+        event = [SELECT Id, Description FROM Event WHERE Id=:event.Id];
+        System.assertEquals('Hi, Test Customer\n\nGreetings!\n\nTest Concert at Test Venue on ' + Date.today().format() + '\n\nPlease visit!', event.Description);
+    }
+}
+Test Class:
+@isTest
+public class UtilitytestConcert {
+	@isTest
+    static void testMy_Events(){
+        ConcertTestClass.testUpdateDesc();
+    }
+}
