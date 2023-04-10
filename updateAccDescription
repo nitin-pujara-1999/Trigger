@@ -1,0 +1,74 @@
+Handler:
+
+public class changeAccDescription {
+    public static void updateAccountDescription(List<Contact> newContacts, Map<Id, Contact> oldContactsMap, Set<Id> deletedContactIds) {
+        Set<Id> accountIds = new Set<Id>();
+        for (Contact con : newContacts) {
+            if (con.AccountId != null) {
+                accountIds.add(con.AccountId);
+            }
+            if (con.AccountId != null && con.Account.Name != oldContactsMap.get(con.Id).Account.Name) {
+                // If the related account name is changed, remove the email domain from the current account's description
+                Id oldAccountId = oldContactsMap.get(con.Id).AccountId;
+                Account currentAccount = [SELECT Id, Description FROM Account WHERE Id=:oldAccountId];
+                if (currentAccount.Description != null && currentAccount.Description.contains(con.Email.split('@')[1])) {
+                    system.debug('Before: Current Account Description: ' + currentAccount.Description);
+                    currentAccount.Description = currentAccount.Description.replace(con.Email.split('@')[1], '').trim();
+                    system.debug('After: Current Account Description: ' + currentAccount.Description);
+                }
+                update currentAccount;
+                // Add the email domain to the new account's description
+                Account newAccount = [SELECT Id, Description FROM Account WHERE Name=:con.Account.Name];
+                if (newAccount.Description == null || newAccount.Description == '') {
+                    newAccount.Description = con.Email.split('@')[1];
+                } else {
+                    newAccount.Description = newAccount.Description + ', ' + con.Email.split('@')[1];
+                }
+                update newAccount;
+            }
+        }
+        for (Id deletedContactId : deletedContactIds) {
+            if (oldContactsMap.containsKey(deletedContactId)) {
+                accountIds.add(oldContactsMap.get(deletedContactId).AccountId);
+            }
+        }
+        List<Account> accountsToUpdate = new List<Account>();
+        List<Account> Accounts = [SELECT Id, Name, Description, (SELECT Id, Email FROM Contacts Limit 200 ) FROM Account WHERE Id IN :accountIds];
+        for (Account acc : Accounts) {
+            system.debug('Account @@@@@@@@@@@'+acc);
+            Set<String> emailDomains = new Set<String>();
+            system.debug('account contact map @@@@'+ acc.Contacts);
+            for (Contact relatedCon : acc.Contacts) {
+                if (relatedCon.Email != null) {
+                    emailDomains.add(relatedCon.Email.split('@')[1]);
+                    system.debug('relatedCon @@@@@@@@'+relatedCon);
+                }
+            }
+            if (oldContactsMap.containsKey(acc.Id)) {
+                emailDomains.remove(oldContactsMap.get(acc.Id).Email.split('@')[1]);
+            }
+            acc.Description = String.join(new List<String>(emailDomains), ', ');
+            accountsToUpdate.add(acc);
+        }
+        system.debug('Account list to update@@@@@@@@@@'+accountsToUpdate);
+        if (!accountsToUpdate.isEmpty()) {
+            update accountsToUpdate;
+        }
+    }
+}
+
+
+Trigger:
+
+trigger ChangeAccDescriptionTrigger on Contact (after insert, after update, after delete, after undelete) {
+    Set<Id> deletedContactIds = new Set<Id>();
+    if (Trigger.isAfter) {
+        if (Trigger.isInsert || Trigger.isUpdate || Trigger.isUndelete) {
+            changeAccDescription.updateAccountDescription(Trigger.new, Trigger.newMap, deletedContactIds);
+        } else if (Trigger.isDelete) {
+            Map<Id, Contact> deletedContactsMap = Trigger.oldMap;
+            deletedContactIds.addAll(deletedContactsMap.keySet());
+            changeAccDescription.updateAccountDescription(Trigger.old, Trigger.oldMap, deletedContactIds);
+        }
+    }
+}
